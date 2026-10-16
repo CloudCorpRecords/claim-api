@@ -11,6 +11,10 @@
  *
  * Stack: raw node:http + a tiny router, zero runtime dependencies beyond the
  * Greenlight engine. Node 20+.
+ *
+ * Two ways to serve it with the SAME handler:
+ *   - long-running node:http server: `npm start` (createApp)
+ *   - Vercel Node function: api/index.mjs default-exports createRequestHandler()
  */
 
 import { createServer } from "node:http";
@@ -19,7 +23,14 @@ import { createSessions } from "./sessions.mjs";
 import { createCache } from "./cache.mjs";
 import { createServiceGitHub } from "./github.mjs";
 
-export function createApp(deps = {}) {
+/**
+ * Build the request handler as a plain async (req, res) function.
+ * Vercel's Node functions accept exactly this shape, and the long-running
+ * server wraps it with node:http's createServer. Vercel preserves the
+ * original req.url across vercel.json rewrites, so the router below sees
+ * the real client path (e.g. /v1/issues/...) unchanged.
+ */
+export function createRequestHandler(deps = {}) {
   const config = {
     clientId: process.env.GITHUB_CLIENT_ID || "",
     clientSecret: process.env.GITHUB_CLIENT_SECRET || "",
@@ -40,7 +51,7 @@ export function createApp(deps = {}) {
 
   registerRoutes({ route, config, githubFactory, sessions, cache });
 
-  const server = createServer(async (req, res) => {
+  return async function requestHandler(req, res) {
     const url = new URL(req.url || "/", "http://localhost");
     const match = routes.find(
       (r) => r.method === req.method && r.pattern.test(url.pathname)
@@ -59,8 +70,16 @@ export function createApp(deps = {}) {
       if (err && err.holder) body.holder = err.holder;
       json(res, status, body);
     }
-  });
-  return server;
+  };
+}
+
+/**
+ * The long-running node:http server (`npm start`). Returns the server,
+ * exactly as before; the refactor only moved the listener into
+ * createRequestHandler.
+ */
+export function createApp(deps = {}) {
+  return createServer(createRequestHandler(deps));
 }
 
 export function json(res, status, body) {
@@ -73,6 +92,28 @@ export function json(res, status, body) {
 }
 
 export async function readJsonBody(req, limitBytes = 64 * 1024) {
+  // Vercel's Node runtime passes req as a readable stream, same as
+  // node:http. If some platform pre-parses the body onto req.body, accept
+  // that too instead of fighting the stream.
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === "string") {
+      if (!req.body.length) return {};
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        throw httpError(400, "bad-json", "Request body is not valid JSON.");
+      }
+    }
+    if (Buffer.isBuffer(req.body)) {
+      if (!req.body.length) return {};
+      try {
+        return JSON.parse(req.body.toString("utf8"));
+      } catch {
+        throw httpError(400, "bad-json", "Request body is not valid JSON.");
+      }
+    }
+    if (typeof req.body === "object") return req.body;
+  }
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
