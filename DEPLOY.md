@@ -10,28 +10,41 @@ research; every step names the path, the value shape, and the check.
    (bottom of the left sidebar) -> **OAuth Apps** -> **New OAuth App**.
 3. Fill in:
    - **Application name:** `Claim Protocol API`
-   - **Homepage URL:** `https://claim-api-RENETHING.replit.app` (replace with
-     your actual Replit URL after step B; you will come back and fix this).
+   - **Homepage URL:** `https://claim-api-YOURNAME.vercel.app` (replace with
+     your actual Vercel URL after step B; you will come back and fix this).
    - **Application description:** `Hosted write API for the Greenlight Claim Protocol.`
-   - **Authorization callback URL:** `https://claim-api-RENETHING.replit.app/auth/github/callback`
+   - **Authorization callback URL:** `https://claim-api-YOURNAME.vercel.app/auth/github/callback`
      (the callback URL is `<APP_BASE_URL>/auth/github/callback`, nothing else).
 4. Click **Register application**.
 5. On the app page, copy the **Client ID**. Click **Generate a new client
-   secret**, copy the **Client secret** once. These go into the Replit secrets
-   in step B as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+   secret**, copy the **Client secret** once. These go into the Vercel
+   environment variables in step B as `GITHUB_CLIENT_ID` and
+   `GITHUB_CLIENT_SECRET`.
 6. Note: the app asks for `public_repo` scope at login (the service requests
    it in the authorize redirect). It cannot see or touch private repos.
 
-## B. Deploy to Replit
+## B. Deploy to Vercel (primary route)
+
+The service runs on Vercel as a single Node serverless function
+(`api/index.mjs`), with every path rewritten onto it by `vercel.json`.
+The same handler also serves the plain `npm start` server (see section D),
+so this is a deployment change only: no code forks.
 
 1. Push this directory to a GitHub repo (e.g. `CloudCorpRecords/claim-api`).
-2. In Replit: **Create** -> **Import from GitHub** -> paste the repo URL.
-3. Replit detects Node. Set the **run command** to `npm start`.
-4. Open the **Secrets** tool (lock icon in the left sidebar) and add:
+2. In Vercel: **Add New** -> **Project** -> **Import** the repo.
+3. Configure the project:
+   - **Framework Preset:** `Other`
+   - **Build Command:** leave empty (no build step; `api/index.mjs` is
+     plain ESM Node)
+   - **Output Directory:** leave empty
+   - **Root Directory:** repo root (as-is)
+   - **Install Command:** `npm install`
+4. In **Settings** -> **Environment Variables** (apply to Production, or all
+   environments), add:
    - `GITHUB_CLIENT_ID` = the Client ID from step A
    - `GITHUB_CLIENT_SECRET` = the Client secret from step A
-   - `APP_BASE_URL` = your Replit app URL, e.g.
-     `https://claim-api-reneturcios.replit.app` (no trailing slash)
+   - `APP_BASE_URL` = your Vercel production URL, e.g.
+     `https://claim-api-YOURNAME.vercel.app` (no trailing slash)
    - `SERVICE_GITHUB_TOKEN` = a fine-grained personal access token with
      **public repository read** (Settings -> Developer settings ->
      Personal access tokens -> Fine-grained tokens -> Generate new token;
@@ -39,18 +52,21 @@ research; every step names the path, the value shape, and the check.
      the default public read). This gives reads 5000 calls/hour.
    - `LEDGER_BASE_URL` = `https://cloudcorprecords.github.io/claim-ledger`
    - `SESSION_SECRET` = any long random string (e.g. `openssl rand -hex 32`).
-   - `PORT` = leave unset; Replit injects its own (the service reads `$PORT`).
-5. Press **Run**. The console should print
-   `claim-api listening on :<port> ...`.
-6. Go back to the OAuth app in step A and fix **Homepage URL** and
-   **Authorization callback URL** to the real Replit URL if they differ.
+5. **Deployment Protection:** in **Settings** -> **Deployment Protection**,
+   make sure the production domain is NOT behind Vercel Authentication.
+   Set protection to **Only Preview Deployments** (or Standard Protection
+   off for production). If Vercel Authentication guards production, the
+   public API answers with a Vercel login wall instead of protocol data.
+6. **Deploy.** Vercel builds and the production URL goes live.
+7. Go back to the OAuth app in step A and fix **Homepage URL** and
+   **Authorization callback URL** to the real Vercel URL if they differ.
 
 ## C. Smoke tests with curl
 
-Replace `API` with your base URL (e.g. `https://claim-api-reneturcios.replit.app`).
+Replace `API` with your base URL (e.g. `https://claim-api-YOURNAME.vercel.app`).
 
 ```bash
-API=https://claim-api-reneturcios.replit.app
+API=https://claim-api-YOURNAME.vercel.app
 
 # 1. Liveness
 curl -s $API/healthz
@@ -94,13 +110,39 @@ curl -s $API/v1/claims/CloudCorpRecords/greenlight/3
 If step 6 returns `claim-held` with a holder, the validation is working: send
 `"queue_ok": true` to join the queue instead.
 
+## D. Fallback: plain Node hosting
+
+Any host that runs a long-lived Node process can serve the same handler with
+`npm start` (Render, Fly.io, a VPS, your own machine). Environment variables
+are the same as section B, plus `PORT` (the server listens on `$PORT` or
+8080). On a long-lived process the in-memory session store and 60s read
+cache persist across requests instead of per-instance (see below), and there
+is no deployment-protection wall to trip over.
+
+Note (Oct 2026): Render and Fly.io both demanded a credit card before
+creating even a free-tier service, which is why Vercel is the primary route.
+
 ## Notes
 
-- Replit sleeps idle free-tier apps; the first request after sleep is slow.
-  For the 15-minute-freshness promise this matters less than it sounds: reads
-  fall back to the static Ledger, and writes are user-initiated.
-- Rate limits: reads use `SERVICE_GITHUB_TOKEN` (5000/hr shared by all
+- **Vercel instances recycle.** On Vercel, the in-memory session store and
+  the 60s read cache are per-function-instance and best effort: a cold or
+  recycled instance forgets prior sessions, so a session token can
+  occasionally stop working and the user re-logs in via
+  `/auth/github/login?format=json`. Raw GitHub user tokens (PATs) are
+  stateless, verified per request against `GET /user`, and are unaffected
+  by recycles. This is a deliberate trade-off documented in the spec
+  (`who_can_claim: "passport"` and persistent sessions remain future work);
+  if sessions ever need to survive recycles, the session store moves to
+  Vercel KV or Postgres.
+- **Cold starts.** The first request to an idle Vercel deployment is slower;
+  live status computation also calls the GitHub API several times, so
+  `vercel.json` sets the function `maxDuration` to 60 seconds. Static reads
+  always fall back to the Ledger, and writes are user-initiated, so this
+  matters less than it sounds.
+- **Rate limits:** reads use `SERVICE_GITHUB_TOKEN` (5000/hr shared by all
   callers). At real traffic, raise the 60s cache or put a CDN in front of the
   GET endpoints.
-- The session store is in memory: restarting the service invalidates session
-  tokens. Raw GitHub PATs keep working through restarts (verified per request).
+- **Rewrites preserve the path.** `vercel.json` rewrites every path onto
+  `/api/index.mjs`; Vercel keeps the original `req.url` when invoking the
+  function, so routing behaves exactly like the plain Node server. If paths
+  ever start 404ing on Vercel, check the rewrite entry before touching code.
