@@ -1,1 +1,18 @@
-{"dependencies":{"@reneturcios/greenlight":"0.4.0"},"description":"Phase 3 hosted API for the Greenlight Claim Protocol: live pre-flight reads plus authenticated claim/release/heartbeat writes via GitHub OAuth.","engines":{"node":">=20"},"main":"src/server.mjs","name":"claim-api","private":true,"scripts":{"start":"node src/server.mjs","test":"node --test test/api.test.mjs"},"type":"module","version":"0.1.0"}
+{
+  "dependencies": {
+    "@reneturcios/greenlight": "0.4.0"
+  },
+  "description": "Phase 3 hosted API for the Greenlight Claim Protocol: live pre-flight reads plus authenticated claim/release/heartbeat writes via GitHub OAuth.",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/server.mjs",
+  "name": "claim-api",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/api.test.mjs test/vercel-entry.test.mjs"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}
