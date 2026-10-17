@@ -14,7 +14,7 @@ export function httpError(httpStatus, code, message) {
   return err;
 }
 
-const UA = "claim-api/0.1.0";
+const UA = "claim-api/0.1.1";
 
 export function createServiceGitHub({ fetchImpl = fetch, token = "" } = {}) {
   const headers = {
@@ -90,6 +90,13 @@ export function createServiceGitHub({ fetchImpl = fetch, token = "" } = {}) {
     },
     getPull(owner, repo, prNumber) {
       return get(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`);
+    },
+    /**
+     * List the repo's open PRs (first page, 100). Used by the linked-PR
+     * fallback scan when the issue timeline is unavailable or incomplete.
+     */
+    listOpenPulls(owner, repo) {
+      return get(`https://api.github.com/repos/${owner}/${repo}/pulls?state=open&per_page=100`);
     },
     getClaimsPolicy(owner, repo) {
       return get(`https://api.github.com/repos/${owner}/${repo}/contents/.greenlight/claims.json`);
