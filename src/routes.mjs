@@ -45,7 +45,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
   const serviceGithub = () => githubFactory({ token: config.serviceToken });
 
   route("GET", /^\/healthz$/, async (req, res) => {
-    json(res, 200, { ok: true, service: "claim-api", version: "0.1.0" });
+    json(res, 200, { ok: true, service: "claim-api", version: "0.1.1" });
   });
 
   route("GET", /^\/$/, async (req, res) => {
@@ -80,14 +80,15 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
     const issue = await github.getIssue(p.owner, p.repo, number);
     if (!issue) throw httpError(404, "issue-not-found", `Issue ${p.owner}/${p.repo}#${number} does not exist.`);
     const nowIso = new Date().toISOString();
-    const { computation, linkedPrDetails, honored, policy } = await assembleProtocolState(
-      github, p.owner, p.repo, number, nowIso
+    const { computation, linkedPrDetails, honored, policy, dataQuality } = await assembleProtocolState(
+      github, p.owner, p.repo, number, nowIso, cache
     );
     const payload = buildStatusPayload({
       owner: p.owner, repo: p.repo, number,
       issueTitle: issue.title,
       computation, linkedPrDetails, honored, policy,
       checkedAt: nowIso,
+      dataQuality,
     });
     cache.set(key, payload);
     json(res, 200, { ...payload, _cache: "miss" });
@@ -99,7 +100,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
     const issue = await github.getIssue(p.owner, p.repo, number);
     if (!issue) throw httpError(404, "issue-not-found", `Issue ${p.owner}/${p.repo}#${number} does not exist.`);
     const nowIso = new Date().toISOString();
-    const { computation } = await assembleProtocolState(github, p.owner, p.repo, number, nowIso);
+    const { computation, dataQuality } = await assembleProtocolState(github, p.owner, p.repo, number, nowIso, cache);
     json(res, 200, {
       v: 1,
       repo: `${p.owner}/${p.repo}`,
@@ -108,6 +109,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
       active: computation.active,
       queue: computation.queue,
       claims: computation.claims,
+      data_quality: dataQuality || { degraded: false, missing: [] },
       _api_note: "Append-only claim chain computed live from GitHub comments. GitHub comments are the source of truth.",
     });
   });
@@ -117,7 +119,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
     try {
       const upstream = await fetch(
         `${config.ledgerBaseUrl}/v1/repos/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/friction.json`,
-        { headers: { "User-Agent": "claim-api/0.1.0" }, signal: AbortSignal.timeout(8000) }
+        { headers: { "User-Agent": "claim-api/0.1.1" }, signal: AbortSignal.timeout(8000) }
       );
       if (upstream.ok) {
         const data = await upstream.json();
