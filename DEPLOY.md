@@ -50,6 +50,17 @@ so this is a deployment change only: no code forks.
      Personal access tokens -> Fine-grained tokens -> Generate new token;
      repository access: Public repositories; permissions: none needed beyond
      the default public read). This gives reads 5000 calls/hour.
+     **Known limitation (observed 2026-10-16):** under a fine-grained PAT,
+     the issue timeline endpoint has been seen returning without its
+     `cross-referenced` events (200 OK, no event), which made a linked claim
+     read as "active". The service now falls back to scanning the repo's
+     open PRs for closing intent (`Fixes #N`) when the timeline is empty or
+     fails, and any remaining gap is disclosed in the payload's
+     `data_quality` field (`{degraded: true, missing: ["timeline"]}`).
+     If you want the timeline as the primary source with no fallback
+     reliance, a **classic PAT with `public_repo` read** is an alternative
+     service token (not verified against this incident; the fallback covers
+     linked detection either way).
    - `LEDGER_BASE_URL` = `https://cloudcorprecords.github.io/claim-ledger`
    - `SESSION_SECRET` = any long random string (e.g. `openssl rand -hex 32`).
 5. **Deployment Protection:** in **Settings** -> **Deployment Protection**,
@@ -70,7 +81,7 @@ API=https://claim-api-YOURNAME.vercel.app
 
 # 1. Liveness
 curl -s $API/healthz
-# -> {"ok": true, "service": "claim-api", "version": "0.1.0"}
+# -> {"ok": true, "service": "claim-api", "version": "0.1.1"}
 
 # 2. Live status read (no protocol claims yet: verdict null, honest cold start)
 curl -s $API/v1/issues/ComposioHQ/composio/4668/status | head -c 600

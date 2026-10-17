@@ -38,6 +38,28 @@ the token itself, and never posts without your token. The OAuth scope is
 `public_repo`: the service can only comment on public issues, never read
 private code.
 
+## Data quality
+
+The read endpoints never answer from silently incomplete data. Every
+status and claim-chain payload carries
+`data_quality: { degraded, missing }`, where `missing` names sources that
+could not be read or proved incomplete:
+
+- `"timeline"` — the issue timeline request failed, or it reported no
+  linked PRs while the open-PR scan found real closing links (observed
+  with a fine-grained service token: the timeline returned 200 without
+  its `cross-referenced` events).
+- `"pr-scan"` — the fallback open-PR scan itself failed.
+- `"pr-scan-truncated"` — the repo has 100+ open PRs, so the scan's first
+  page may have missed a link.
+
+The fallback runs when the timeline fails or yields no linked PRs for an
+issue with protocol claim comments. Healthy reads return
+`{ degraded: false, missing: [] }`. Each linked PR in the payload carries
+`source: "timeline"` or `source: "pr-scan"`.
+
+See [CHANGELOG.md](CHANGELOG.md) for the 0.1.1 incident and fix.
+
 ## Relationship to the static Ledger
 
 The static Ledger (`cloudcorprecords.github.io/claim-ledger`) is the Phase 2
