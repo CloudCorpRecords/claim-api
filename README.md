@@ -58,9 +58,17 @@ inspectable. claim-api is the Phase 3 form:
 cp .env.example .env   # fill in the values
 npm install
 npm start              # listens on $PORT (default 8080)
-npm test               # 13 tests against a mocked GitHub API
+npm test               # 19 tests against a mocked GitHub API
 ```
 
-See [DEPLOY.md](DEPLOY.md) for the OAuth app setup, Replit deployment, and
-curl smoke tests. See [docs/client-integration.md](docs/client-integration.md)
+See [DEPLOY.md](DEPLOY.md) for the OAuth app setup, Vercel deployment (primary
+route), plain-Node fallback hosting, and curl smoke tests.
+See [docs/client-integration.md](docs/client-integration.md)
 for how a future Greenlight release calls this API.
+
+**Vercel note:** the service also runs as one serverless function
+(`api/index.mjs` default-exports the same handler `npm start` serves).
+On Vercel the in-memory session store and 60s read cache are per-instance
+and best effort, so session tokens can occasionally require re-login; raw
+GitHub user tokens are stateless and unaffected. Keep Vercel Deployment
+Protection off the production domain so the API stays public.
