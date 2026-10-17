@@ -73,6 +73,7 @@ function makeFactory(store) {
       },
       async getTimeline() { return []; },
       async getPull() { return null; },
+      async listOpenPulls() { return []; },
       async getClaimsPolicy() { return null; },
     };
   };
@@ -119,6 +120,7 @@ test("GET status on an issue with no protocol claims leaves the verdict to the c
     assert.ok(body.issue.includes("/acme/repo/issues/42"));
     assert.equal(body.stale_after_seconds, 60);
     assert.ok(body.checked_at);
+    assert.deepEqual(body.data_quality, { degraded: false, missing: [] });
   });
 });
 
@@ -175,6 +177,8 @@ test("POST /v1/claims with queue_ok joins the public queue", async () => {
     assert.equal(body.claim.claimant, "alice");
     assert.equal(body.claim.queue.length, 1);
     assert.equal(body.claim.queue[0].claimant, "bob");
+    // Fallback scan ran (empty), everything fetched fine: not degraded.
+    assert.deepEqual(body.data_quality, { degraded: false, missing: [] });
   });
 });
 
