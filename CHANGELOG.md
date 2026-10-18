@@ -1,5 +1,64 @@
 # claim-api CHANGELOG
 
+## 1.0.0 (2026-10-18)
+
+**The Greenlight Claims GitHub App backend.** The service now runs the app
+alongside the existing pre-flight API. All existing endpoints are backward
+compatible.
+
+New endpoints:
+
+- `POST /v1/app/webhook`: GitHub webhook receiver. Verifies
+  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body); missing or bad
+  signatures get 401. Processed `X-GitHub-Delivery` ids are recorded in the
+  durable store, so replays return 200 without re-applying. Until the four
+  app env vars are set, 503 `app-not-configured`.
+- `GET /v1/app/repos/:owner/:repo/installation`: `{"installed": true,
+  "app_slug": ...}` or `{"installed": false}`. Public.
+- `GET /v1/app/installations`: every repo with the app installed. Public.
+- `GET`/`POST /v1/app/sweep`: expiry sweep plus queue promotion, guarded
+  by `Authorization: Bearer <CRON_SECRET>`; wired in vercel.json every 15
+  minutes. (Vercel cron jobs issue GET and attach the bearer
+  automatically.)
+- `POST /v1/app/claims`: the app posts the protocol claim comment as
+  itself with an `on-behalf-of:` attribution line; the webhook records the
+  claim. 409 when the app is not installed on the repo.
+
+Event handlers: issue_comment created/edited/deleted (claim, queue,
+heartbeat, release, maintainer supersede, implicit release on deletion),
+pull_request opened/closed (link on closing intent, lease frozen; merged
+to completed, closed unmerged to linked-dead), issues closed/reopened
+(release with reason `issue-closed`; no auto-restore), installation and
+installation_repositories bookkeeping.
+
+Enforcement: one active claim per issue (queue instead of overwrite),
+lease 1 to 30 days from `.greenlight/claims.json` (default 7), 28-day
+tenure cap without a linked PR, hard-gate checks (including an
+AI-generated-contribution-ban detector) before a claim counts as valid,
+30/hour per caller on user writes, 240/hour per installation on
+webhook-triggered writes. Gate-blocked claims are recorded with
+`valid: false` and the evidence, never silently dropped.
+
+Durable state lives in the claim-ledger repo (installation token, GitHub
+contents API): `docs/v1/repos/<owner>/<repo>/claims-app.json`,
+`docs/v1/apps/greenlight-claims/installations.json`,
+`docs/v1/apps/greenlight-claims/deliveries/<date>.json`. The store has
+memory, local-file (`APP_STATE_MODE=local`), and ledger-repo backends.
+
+Sessions are now stateless: HMAC-signed, AES-256-GCM encrypted envelopes
+verified with `SESSION_SECRET` (the in-memory map is deleted). Session
+tokens issued before this release stop working; raw GitHub user tokens are
+unaffected.
+
+Registration: `app-manifest.json`, `scripts/print-manifest-url.mjs`, and
+`docs/APP-RUNBOOK.md` (the one-page tap: create the app from the manifest
+URL, generate the private key and webhook secret, add the four env vars to
+Vercel Production and redeploy, install on the claim-ledger and greenlight
+repos). Note: the manifest requests `contents: write` (the contract draft
+said `read`); write is required because the durable store is committed to
+the claim-ledger repo by the app. The code never writes contents anywhere
+else.
+
 ## 0.1.1 (2026-10-16)
 
 **Fix: linked claims misread as "active" when the timeline was incomplete.**

@@ -121,7 +121,35 @@ curl -s $API/v1/claims/CloudCorpRecords/greenlight/3
 If step 6 returns `claim-held` with a holder, the validation is working: send
 `"queue_ok": true` to join the queue instead.
 
-## D. Fallback: plain Node hosting
+## D. GitHub App backend (v1.0)
+
+The app backend extends this same service and Vercel project. Registration
+is a one-time tap: follow [docs/APP-RUNBOOK.md](docs/APP-RUNBOOK.md)
+(manifest URL helper at `scripts/print-manifest-url.mjs`).
+
+Environment variables (Production):
+
+- `GITHUB_APP_ID`: the numeric app id from the app settings page.
+- `GITHUB_APP_PRIVATE_KEY`: the PEM generated on the app settings page.
+  Paste it exactly, BEGIN/END lines included. Key custody is binding: it
+  goes into this env var and into the encrypted vault at
+  `vault:github-apps/greenlight-claims/private-key`, and never into any
+  file, chat message, or git.
+- `GITHUB_WEBHOOK_SECRET`: the secret set on the app settings page.
+  Same custody rule; vault path
+  `vault:github-apps/greenlight-claims/webhook-secret`.
+- `CRON_SECRET`: any long random string (`openssl rand -hex 32`). Guards
+  `/v1/app/sweep`; Vercel attaches it to cron calls automatically.
+- `GITHUB_APP_SLUG`: the app slug (public), used in install answers.
+- `APP_STATE_MODE`: `ledger` (default, production), `local` (dev, needs
+  `APP_STATE_DIR`), or `memory` (tests).
+
+Until the first four are set, every `/v1/app/*` endpoint answers 503
+`app-not-configured`. The claim-ledger repo must have the app installed
+with contents write, or state writes answer 503 `app-state-unavailable`
+while reads keep working.
+
+## E. Fallback: plain Node hosting
 
 Any host that runs a long-lived Node process can serve the same handler with
 `npm start` (Render, Fly.io, a VPS, your own machine). Environment variables
