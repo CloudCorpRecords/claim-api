@@ -11,7 +11,7 @@
   "private": true,
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test test/api.test.mjs test/vercel-entry.test.mjs test/linked-fallback.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "type": "module",
   "version": "0.1.1"

@@ -101,5 +101,18 @@ export function createServiceGitHub({ fetchImpl = fetch, token = "" } = {}) {
     getClaimsPolicy(owner, repo) {
       return get(`https://api.github.com/repos/${owner}/${repo}/contents/.greenlight/claims.json`);
     },
+    /**
+     * Raw contents API: returns the file object (with base64 content) or an
+     * array for directories, or null on 404. Used by the app backend's gate
+     * check and policy reads under an installation token.
+     */
+    getContents(owner, repo, path) {
+      return get(`https://api.github.com/repos/${owner}/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`);
+    },
+    /** List a directory's entries (or null when it does not exist). */
+    async listDir(owner, repo, path) {
+      const data = await this.getContents(owner, repo, path);
+      return Array.isArray(data) ? data : null;
+    },
   };
 }

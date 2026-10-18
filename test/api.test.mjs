@@ -82,7 +82,7 @@ function makeFactory(store) {
 async function withServer(store, fn) {
   const app = createApp({
     githubFactory: makeFactory(store),
-    sessions: createSessions(),
+    sessions: createSessions({ secret: "test-session-secret" }),
     cache: createCache(),
     config: { serviceToken: "svc", ledgerBaseUrl: "http://127.0.0.1:1", clientId: "cid", clientSecret: "csecret" },
   });
