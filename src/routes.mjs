@@ -5,6 +5,16 @@
 import { json, readJsonBody, httpError } from "./server.mjs";
 import { assembleProtocolState, buildStatusPayload, fetchPolicyState } from "./protocol-live.mjs";
 import { claimIssue, releaseClaim, heartbeatClaim } from "./write-actions.mjs";
+import { USER_WRITE_LIMIT } from "./app-ratelimit.mjs";
+
+function checkUserWriteLimit(limiter, login) {
+  if (!limiter) return;
+  const rl = limiter.check(`user:${login}`, USER_WRITE_LIMIT);
+  if (!rl.allowed) {
+    throw httpError(429, "user-rate-limited",
+      `Write rate limit reached (30/hour for @${login}). Try again in a bit.`);
+  }
+}
 
 function parseNum(value, name) {
   const n = Number(value);
@@ -22,8 +32,10 @@ function bearerToken(req) {
  * Resolve the caller. Accepts either a claim-api session token (issued by the
  * OAuth callback) or a raw GitHub user token (device flow / PAT). In both
  * cases we verify against GET /user and learn the GitHub login.
+ *
+ * Exported so the app routes can reuse the same caller resolution.
  */
-async function resolveCaller({ req, sessions, githubFactory }) {
+export async function resolveCaller({ req, sessions, githubFactory }) {
   const token = bearerToken(req);
   if (!token) throw httpError(401, "missing-token", "Send Authorization: Bearer <token>.");
   const session = sessions.get(token);
@@ -41,17 +53,17 @@ async function resolveCaller({ req, sessions, githubFactory }) {
   return { login, github, viaSession: !!session };
 }
 
-export function registerRoutes({ route, config, githubFactory, sessions, cache }) {
+export function registerRoutes({ route, config, githubFactory, sessions, cache, limiter }) {
   const serviceGithub = () => githubFactory({ token: config.serviceToken });
 
   route("GET", /^\/healthz$/, async (req, res) => {
-    json(res, 200, { ok: true, service: "claim-api", version: "0.1.1" });
+    json(res, 200, { ok: true, service: "claim-api", version: "1.0.0" });
   });
 
   route("GET", /^\/$/, async (req, res) => {
     json(res, 200, {
       service: "claim-api",
-      description: "Phase 3 hosted API for the Greenlight Claim Protocol.",
+      description: "Hosted API for the Greenlight Claim Protocol, plus the Greenlight Claims GitHub App backend.",
       endpoints: [
         "GET /v1/issues/:owner/:repo/:number/status",
         "GET /v1/claims/:owner/:repo/:number",
@@ -59,6 +71,11 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
         "POST /v1/claims",
         "POST /v1/claims/release",
         "POST /v1/claims/heartbeat",
+        "POST /v1/app/webhook",
+        "GET /v1/app/repos/:owner/:repo/installation",
+        "GET /v1/app/installations",
+        "GET /v1/app/sweep",
+        "POST /v1/app/claims",
         "GET /auth/github/login",
         "GET /auth/github/callback",
         "GET /healthz",
@@ -119,7 +136,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
     try {
       const upstream = await fetch(
         `${config.ledgerBaseUrl}/v1/repos/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/friction.json`,
-        { headers: { "User-Agent": "claim-api/0.1.1" }, signal: AbortSignal.timeout(8000) }
+        { headers: { "User-Agent": "claim-api/1.0.0" }, signal: AbortSignal.timeout(8000) }
       );
       if (upstream.ok) {
         const data = await upstream.json();
@@ -139,6 +156,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
 
   route("POST", /^\/v1\/claims$/, async (req, res) => {
     const { login, github } = await resolveCaller({ req, sessions, githubFactory });
+    checkUserWriteLimit(limiter, login);
     const body = await readJsonBody(req);
     for (const f of ["owner", "repo", "issue"]) {
       if (!body[f]) throw httpError(400, "missing-field", `Body must include ${f}.`);
@@ -158,6 +176,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
 
   route("POST", /^\/v1\/claims\/release$/, async (req, res) => {
     const { login, github } = await resolveCaller({ req, sessions, githubFactory });
+    checkUserWriteLimit(limiter, login);
     const body = await readJsonBody(req);
     for (const f of ["owner", "repo", "issue"]) {
       if (!body[f]) throw httpError(400, "missing-field", `Body must include ${f}.`);
@@ -170,6 +189,7 @@ export function registerRoutes({ route, config, githubFactory, sessions, cache }
 
   route("POST", /^\/v1\/claims\/heartbeat$/, async (req, res) => {
     const { login, github } = await resolveCaller({ req, sessions, githubFactory });
+    checkUserWriteLimit(limiter, login);
     const body = await readJsonBody(req);
     for (const f of ["owner", "repo", "issue"]) {
       if (!body[f]) throw httpError(400, "missing-field", `Body must include ${f}.`);

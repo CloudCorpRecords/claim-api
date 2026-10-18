@@ -19,9 +19,14 @@
 
 import { createServer } from "node:http";
 import { registerRoutes } from "./routes.mjs";
+import { registerAppRoutes } from "./app-routes.mjs";
 import { createSessions } from "./sessions.mjs";
 import { createCache } from "./cache.mjs";
 import { createServiceGitHub } from "./github.mjs";
+import { loadAppConfig } from "./app-config.mjs";
+import { createAppAuth } from "./app-auth.mjs";
+import { createAppStore } from "./app-store.mjs";
+import { createRateLimiter } from "./app-ratelimit.mjs";
 
 /**
  * Build the request handler as a plain async (req, res) function.
@@ -41,15 +46,21 @@ export function createRequestHandler(deps = {}) {
     ...(deps.config || {}),
   };
   const githubFactory = deps.githubFactory || createServiceGitHub;
-  const sessions = deps.sessions || createSessions();
+  const sessions = deps.sessions || createSessions({ secret: config.sessionSecret });
   const cache = deps.cache || createCache();
+  const appConfig = deps.appConfig || loadAppConfig();
+  const appAuth = deps.appAuth || createAppAuth({ config: appConfig });
+  const appStore = deps.appStore || createAppStore({ config: appConfig, appAuth });
+  const limiter = deps.limiter || createRateLimiter();
+  const app = { config: appConfig, auth: appAuth, store: appStore, limiter };
   const routes = [];
 
   function route(method, pattern, handler) {
     routes.push({ method, pattern, handler });
   }
 
-  registerRoutes({ route, config, githubFactory, sessions, cache });
+  registerRoutes({ route, config, githubFactory, sessions, cache, limiter });
+  registerAppRoutes({ route, config, githubFactory, sessions, cache, app });
 
   return async function requestHandler(req, res) {
     const url = new URL(req.url || "/", "http://localhost");
