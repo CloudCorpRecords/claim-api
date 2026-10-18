@@ -2,7 +2,7 @@
   "dependencies": {
     "@reneturcios/greenlight": "0.4.0"
   },
-  "description": "Phase 3 hosted API for the Greenlight Claim Protocol: live pre-flight reads plus authenticated claim/release/heartbeat writes via GitHub OAuth.",
+  "description": "Hosted API for the Greenlight Claim Protocol: live pre-flight reads, authenticated writes, and the Greenlight Claims GitHub App backend (webhooks, durable claim state, enforcement).",
   "engines": {
     "node": ">=20"
   },
@@ -14,5 +14,5 @@
     "test": "node --test test/*.test.mjs"
   },
   "type": "module",
-  "version": "0.1.1"
+  "version": "1.0.0"
 }

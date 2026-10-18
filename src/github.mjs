@@ -14,7 +14,7 @@ export function httpError(httpStatus, code, message) {
   return err;
 }
 
-const UA = "claim-api/0.1.1";
+const UA = "claim-api/1.0.0";
 
 export function createServiceGitHub({ fetchImpl = fetch, token = "" } = {}) {
   const headers = {
