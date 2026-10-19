@@ -1,0 +1,21 @@
+name: claim-sweep
+
+# Runs the claim-api expiry sweep every 15 minutes. This replaces the Vercel
+# cron that used to live in vercel.json: the project's Hobby plan only allows
+# daily Vercel crons, and GitHub Actions schedules are free on a public repo.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run claim sweep
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -fsS -X POST "https://claim-api-wine.vercel.app/v1/app/sweep" \
+            -H "Authorization: Bearer $CRON_SECRET"
