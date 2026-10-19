@@ -17,5 +17,18 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -fsS -X POST "https://claim-api-wine.vercel.app/v1/app/sweep" \
-            -H "Authorization: Bearer $CRON_SECRET"
+          code=$(curl -sS -o /tmp/sweep-body.json -w "%{http_code}" -X POST \
+            "https://claim-api-wine.vercel.app/v1/app/sweep" \
+            -H "Authorization: Bearer $CRON_SECRET")
+          cat /tmp/sweep-body.json
+          echo
+          if [ "$code" = "503" ] && grep -q "app-not-configured" /tmp/sweep-body.json; then
+            echo "claim-api app env is not configured yet; the sweep stays dormant until the GitHub App env vars land in Vercel."
+            exit 0
+          fi
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "sweep ok (HTTP $code)"
+            exit 0
+          fi
+          echo "sweep failed with HTTP $code"
+          exit 1
